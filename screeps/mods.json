@@ -1,0 +1,5 @@
+{
+  "mods": [
+    "node_modules/screepsmod-auth/index.js"
+  ]
+}

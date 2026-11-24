@@ -1,0 +1,51 @@
+services:
+  screeps:
+    build: ./screeps
+    container_name: screeps
+    restart: always
+    env_file:
+      - .env
+    environment:
+      ROOM: ${ROOM:-W5N5}
+    ports:
+      - "127.0.0.1:21025:21025"
+    volumes:
+      - ${SCREEPS_DATA_DIR:-./.local-data}:/data
+    networks:
+      - internal
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:21025/api/version').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 90s
+
+  companion:
+    build: ./companion
+    container_name: screeps-companion
+    restart: always
+    env_file:
+      - .env
+    environment:
+      SCREEPS_URL: http://screeps:21025
+      PORT: "21080"
+      ROOM: ${ROOM:-W5N5}
+    depends_on:
+      - screeps
+    ports:
+      - "127.0.0.1:21080:21080"
+    networks:
+      - internal
+      - proxy
+
+networks:
+  internal:
+  proxy:
+    external: true
+    name: reverse-proxy_default

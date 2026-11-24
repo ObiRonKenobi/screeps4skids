@@ -1,0 +1,9 @@
+{
+  "name": "screeps4skids-server",
+  "private": true,
+  "description": "Pinned open-source Screeps server. Password accounts come from screepsmod-auth because screeps 4.3.2 does not ship sign-in or register routes.",
+  "dependencies": {
+    "screeps": "4.3.2",
+    "screepsmod-auth": "2.10.1"
+  }
+}
