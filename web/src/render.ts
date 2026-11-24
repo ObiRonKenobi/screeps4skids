@@ -13,6 +13,8 @@ export interface GameObject {
   spawning?: { name?: string } | null;
   user?: string;
   level?: number;
+  progress?: number;
+  progressTotal?: number;
   body?: unknown[];
 }
 
@@ -35,8 +37,16 @@ export class RoomView {
   constructor(private canvas: HTMLCanvasElement) {
     canvas.addEventListener('wheel', (event) => {
       event.preventDefault();
-      const next = this.cell + (event.deltaY < 0 ? 2 : -2);
-      this.cell = Math.min(32, Math.max(6, next));
+      const rect = this.canvas.getBoundingClientRect();
+      const next = Math.min(32, Math.max(6, this.cell + (event.deltaY < 0 ? 2 : -2)));
+      if (next === this.cell) return;
+      const anchorX = rect.width / 2;
+      const anchorY = rect.height / 2;
+      const worldX = (anchorX - this.originX) / this.cell;
+      const worldY = (anchorY - this.originY) / this.cell;
+      this.cell = next;
+      this.originX = anchorX - worldX * this.cell;
+      this.originY = anchorY - worldY * this.cell;
       this.clamp();
     }, { passive: false });
     canvas.addEventListener('pointerdown', (event) => {
@@ -100,10 +110,8 @@ export class RoomView {
   private clamp() {
     const rect = this.canvas.getBoundingClientRect();
     const size = this.cell * ROOM;
-    const minX = Math.min(0, rect.width - size);
-    const minY = Math.min(0, rect.height - size);
-    this.originX = Math.max(minX, Math.min(0, this.originX));
-    this.originY = Math.max(minY, Math.min(0, this.originY));
+    this.originX = place(this.originX, rect.width, size);
+    this.originY = place(this.originY, rect.height, size);
   }
 
   private drawTerrain(ctx: CanvasRenderingContext2D, terrain: string | null) {
@@ -132,6 +140,11 @@ export class RoomView {
       }
     }
   }
+}
+
+function place(origin: number, view: number, size: number) {
+  if (size <= view) return Math.floor((view - size) / 2);
+  return Math.max(view - size, Math.min(0, origin));
 }
 
 function rank(type?: string) {

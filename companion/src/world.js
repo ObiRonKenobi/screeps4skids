@@ -230,74 +230,10 @@ class World {
   }
 
   watch() {
-    const socket = new WebSocket(this.api.baseUrl.replace(/^http/, 'ws') + '/socket/websocket');
     this.authed = false;
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const fail = (error) => {
-        if (settled) return;
-        settled = true;
-        socket.close();
-        reject(error instanceof Error ? error : new Error(String(error)));
-      };
-      socket.on('error', fail);
-      socket.on('close', () => fail(new Error('screeps socket closed')));
-      socket.on('message', (raw) => {
-        let frames;
-        try {
-          frames = decodeFrames(raw.toString());
-        } catch (error) {
-          console.error('socket frame:', error.message);
-          return;
-        }
-        frames.forEach((frame) => this.onFrame(socket, frame));
-      });
-    });
-  }
-
-  onFrame(socket, frame) {
-    if (frame === 'o') return;
-    if (typeof frame !== 'string') return;
-    if (!this.authed && (frame.startsWith('time ') || frame.startsWith('protocol '))) {
-      this.authed = true;
-      socket.send('auth ' + this.api.token);
-      return;
-    }
-    if (frame.startsWith('auth ok ')) {
-      this.api.token = frame.slice('auth ok '.length).trim();
-      socket.send('subscribe room:' + this.room);
-      if (this.ownerUserId) socket.send('subscribe user:' + this.ownerUserId + '/cpu');
-      return;
-    }
-    if (frame.startsWith('auth failed')) {
-      socket.close();
-      return;
-    }
-    let payload;
-    try {
-      payload = JSON.parse(frame);
-    } catch (error) {
-      return;
-    }
-    if (!Array.isArray(payload) || payload.length < 2) return;
-    const [channel, data] = payload;
-    if (channel === 'room:' + this.room && data) {
-      if (typeof data.gameTime === 'number') this.tick = data.gameTime;
-      this.applyUsers(data.users);
-      this.applyObjects(data.objects, this.objectsReady);
-      this.objectsReady = true;
-      this.emit({
-        type: 'patch',
-        tick: this.tick,
-        objects: data.objects || {},
-        users: this.users,
-        status: this.status()
-      });
-    }
-    if (typeof channel === 'string' && channel.endsWith('/cpu')) {
-      this.cpu = readCpu(data);
-      this.emit({ type: 'status', ...this.status(), tick: this.tick });
-    }
+    this.userId = this.ownerUserId;
+    const feed = openGameSocket(this.api.baseUrl, (socket, frame) => handleFrame(this, socket, frame));
+    return feed.done;
   }
 
   }
@@ -309,14 +245,97 @@ function readCpu(data) {
   return null;
 }
 
+function handleFrame(state, socket, frame) {
+  if (frame === 'o') return;
+  if (typeof frame !== 'string') return;
+  if (!state.authed && (frame.startsWith('time ') || frame.startsWith('protocol '))) {
+    state.authed = true;
+    socket.send('auth ' + state.api.token);
+    return;
+  }
+  if (frame.startsWith('auth ok ')) {
+    state.api.token = frame.slice('auth ok '.length).trim();
+    socket.send('subscribe room:' + state.room);
+    if (state.userId) socket.send('subscribe user:' + state.userId + '/cpu');
+    return;
+  }
+  if (frame.startsWith('auth failed')) {
+    socket.close();
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(frame);
+  } catch (error) {
+    return;
+  }
+  if (!Array.isArray(payload) || payload.length < 2) return;
+  const [channel, data] = payload;
+  if (channel === 'room:' + state.room && data) {
+    if (typeof data.gameTime === 'number') state.tick = data.gameTime;
+    state.applyUsers(data.users);
+    state.applyObjects(data.objects, state.objectsReady);
+    state.objectsReady = true;
+    state.emit({
+      type: 'patch',
+      tick: state.tick,
+      objects: data.objects || {},
+      users: state.users,
+      status: state.status()
+    });
+  }
+  if (typeof channel === 'string' && channel.endsWith('/cpu')) {
+    state.cpu = readCpu(data);
+    state.emit({ type: 'status', ...state.status(), tick: state.tick });
+  }
+}
+
+function openGameSocket(baseUrl, onFrame) {
+  const socket = new WebSocket(baseUrl.replace(/^http/, 'ws') + '/socket/websocket');
+  let settled = false;
+  let stopping = false;
+  let resolveDone;
+  let rejectDone;
+  const done = new Promise((resolve, reject) => {
+    resolveDone = resolve;
+    rejectDone = reject;
+  });
+  const finish = (error) => {
+    if (settled) return;
+    settled = true;
+    try { socket.close(); } catch (closeError) { /* already closed */ }
+    if (stopping || !error) resolveDone();
+    else rejectDone(error instanceof Error ? error : new Error(String(error)));
+  };
+  socket.on('error', (error) => finish(error));
+  socket.on('close', () => finish(stopping ? null : new Error('screeps socket closed')));
+  socket.on('message', (raw) => {
+    let frames;
+    try {
+      frames = decodeFrames(raw.toString());
+    } catch (error) {
+      console.error('socket frame:', error.message);
+      return;
+    }
+    frames.forEach((frame) => onFrame(socket, frame));
+  });
+  return {
+    done,
+    close() {
+      stopping = true;
+      finish(null);
+    }
+  };
+}
+
 function decodeFrames(text) {
   if (!text || text === 'h' || text === 'o') return text === 'o' ? ['o'] : [];
-  if (text[0] === 'c') return [];
-  if (text[0] === 'a') {
+  if (text[0] === 'c' && text[1] === '[') return [];
+  if (text[0] === 'a' && text[1] === '[') {
     const messages = JSON.parse(text.slice(1));
     return Array.isArray(messages) ? messages : [];
   }
   return [text];
 }
 
-module.exports = { World };
+module.exports = { World, openGameSocket, handleFrame, pick, readCpu };

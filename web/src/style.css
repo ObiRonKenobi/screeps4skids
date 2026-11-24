@@ -166,6 +166,25 @@ dl {
 dt { color: var(--dim); }
 dd { margin: 0; color: var(--hot); }
 
+.meter { margin-top: 10px; }
+.meter-label, .meter-readout {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+.meter-track {
+  height: 10px;
+  margin: 4px 0;
+  border: 1px solid var(--line);
+  background: #021208;
+}
+.meter-fill {
+  height: 100%;
+  width: 0;
+  background: var(--hot);
+  box-shadow: 0 0 8px rgba(80, 255, 140, 0.65);
+}
+
 form {
   display: flex;
   flex-direction: column;
@@ -174,13 +193,20 @@ form {
 
 label { font-size: 12px; color: var(--dim); letter-spacing: 0.08em; }
 
-input {
+input, textarea {
   width: 100%;
   background: #021208;
   color: var(--hot);
   border: 1px solid var(--line);
   padding: 7px 8px;
   font: inherit;
+}
+
+textarea {
+  min-height: 280px;
+  resize: vertical;
+  white-space: pre;
+  overflow: auto;
 }
 
 .note, .error { font-size: 12px; line-height: 1.4; }
@@ -199,7 +225,25 @@ input {
   color: var(--text);
 }
 
+.guide .guide-list {
+  display: block;
+  margin: 0 0 4px;
+}
+
+.guide .guide-list dt {
+  margin-top: 8px;
+  color: var(--hot);
+}
+
+.guide .guide-list dd {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
 @media (max-width: 900px) {
-  #layout { grid-template-columns: 1fr; grid-template-rows: minmax(280px, 1fr) auto; }
-  #map-wrap { border-right: 0; border-bottom: 1px solid var(--line); min-height: 320px; }
+  html, body, #app { height: auto; min-height: 100%; overflow: visible; }
+  #layout { display: block; }
+  #map-wrap { height: 460px; border-right: 0; border-bottom: 1px solid var(--line); }
+  aside { overflow: visible; }
 }

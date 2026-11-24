@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { ScreepsApi } = require('./screeps');
 const { World } = require('./world');
+const { PlayerView } = require('./player');
 
 const port = Number(process.env.PORT || 21080);
 const sharedCode = process.env.SHARED_CODE || '';
@@ -109,6 +110,18 @@ async function handleRegister(socket, message, ip) {
   }
 }
 
+function stopPlayer(socket) {
+  if (!socket.player) return;
+  socket.player.stop();
+  socket.player = null;
+}
+
+function showOwnerColony(socket) {
+  socket.session = null;
+  send(socket, { type: 'logout', ok: true });
+  send(socket, world.snapshot());
+}
+
 async function handleLogin(socket, message, ip) {
   if (rateLimited(ip)) {
     send(socket, { type: 'auth', ok: false, error: 'Too many attempts. Wait and try again.' });
@@ -123,14 +136,50 @@ async function handleLogin(socket, message, ip) {
   }
   const api = new ScreepsApi(screepsUrl);
   try {
-    const token = await api.signin(username, password);
+    await api.signin(username, password);
     const me = await api.me();
-    socket.session = { username: me.username || username, token, userId: me._id };
+    stopPlayer(socket);
+    const player = new PlayerView({
+      api,
+      userId: me._id,
+      username: me.username || username,
+      gcl: me.gcl,
+      ownerRoom: world.room || process.env.ROOM || 'W5N5',
+      cliHost: new URL(screepsUrl).hostname,
+      seedStarter: process.env.SEED_STARTER !== '0'
+    });
+    socket.player = player;
+    socket.session = { username: player.username, userId: player.userId };
+    player.onEvent((update) => send(socket, update));
     send(socket, { type: 'auth', ok: true, username: socket.session.username });
+    await player.prepare();
+    player.watch();
   } catch (error) {
-    markFail(ip);
+    console.error('login:', error.message);
+    const opened = Boolean(socket.player);
+    stopPlayer(socket);
     socket.session = null;
-    send(socket, { type: 'auth', ok: false, error: 'Login failed.' });
+    if (!opened) {
+      markFail(ip);
+      send(socket, { type: 'auth', ok: false, error: 'Login failed.' });
+      return;
+    }
+    send(socket, { type: 'logout', ok: true });
+    send(socket, world.snapshot());
+    send(socket, { type: 'log', tick: world.tick, text: 'Could not open that colony.' });
+  }
+}
+
+async function handleCode(socket, message) {
+  if (!socket.player) {
+    send(socket, { type: 'code', ok: false, error: 'Log in to edit your script.' });
+    return;
+  }
+  try {
+    await socket.player.saveMain(message.source);
+    send(socket, { type: 'code', ok: true });
+  } catch (error) {
+    send(socket, { type: 'code', ok: false, error: 'Could not save.' });
   }
 }
 
@@ -168,8 +217,14 @@ sockets.on('connection', (socket, request) => {
     if (!message || typeof message.type !== 'string') return;
     if (message.type === 'login') handleLogin(socket, message, ip);
     if (message.type === 'register') handleRegister(socket, message, ip);
+    if (message.type === 'logout') {
+      stopPlayer(socket);
+      showOwnerColony(socket);
+    }
+    if (message.type === 'code') handleCode(socket, message);
   });
   socket.on('close', () => {
+    stopPlayer(socket);
     clients.delete(socket);
     socket.session = null;
     socket.pending = null;
@@ -177,9 +232,9 @@ sockets.on('connection', (socket, request) => {
 });
 
 world.onEvent((message) => {
-  const raw = JSON.stringify(message);
   for (const socket of clients) {
-    if (socket.readyState === 1) socket.send(raw);
+    if (socket.player) continue;
+    send(socket, message);
   }
 });
 
