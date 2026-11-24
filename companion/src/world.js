@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const { STARTER_MAIN, ScreepsApi, gclLevel, roomCandidates, spawnTiles } = require('./screeps');
 
-const KEEP = ['_id', 'type', 'x', 'y', 'name', 'hits', 'hitsMax', 'store', 'storeCapacityResource', 'energy', 'energyCapacity', 'spawning', 'user', 'level', 'progress', 'progressTotal', 'mineralType', 'body'];
+const KEEP = ['_id', 'type', 'x', 'y', 'name', 'hits', 'hitsMax', 'store', 'storeCapacityResource', 'energy', 'energyCapacity', 'spawning', 'user', 'level', 'progress', 'progressTotal', 'mineralType', 'body', 'structureType'];
 
 function pick(object) {
   const out = {};

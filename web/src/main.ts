@@ -103,9 +103,12 @@ canvas.addEventListener('click', (event) => {
   if (!tile) {
     state.selectedId = null;
   } else {
-    const found = Object.values(state.objects).find((object) => object.x === tile.x && object.y === tile.y && object.type === 'creep')
-      || Object.values(state.objects).find((object) => object.x === tile.x && object.y === tile.y);
-    state.selectedId = found ? found._id : null;
+    const onTile = objectsOnTile(tile.x, tile.y);
+    if (!onTile.length) state.selectedId = null;
+    else {
+      const index = onTile.findIndex((object) => object._id === state.selectedId);
+      state.selectedId = onTile[(index + 1) % onTile.length]._id;
+    }
   }
   paintChrome();
 });
@@ -150,7 +153,7 @@ function paintChrome() {
   roomName.textContent = 'ROOM ' + state.room;
   roomFoot.textContent = 'ROOM ' + state.room;
   const signature = state.panel === 'colony'
-    ? ['colony', state.selectedId, state.logs.map((line) => line.text).join('|'), energyKey(), state.status.cpu, state.status.gcl, state.colonyUser, controllerKey(), dead ? 'dead' : '', state.restarting ? 'restart' : '', state.message].join('~')
+    ? ['colony', state.selectedId, selectionKey(), state.logs.map((line) => line.text).join('|'), energyKey(), state.status.cpu, state.status.gcl, state.colonyUser, controllerKey(), dead ? 'dead' : '', state.restarting ? 'restart' : '', state.message].join('~')
     : state.panel === 'code'
       ? ['code', state.codeVersion, state.message].join('~')
       : [state.panel, state.createStep, state.message, state.panel === 'guide' ? state.colonyUser : ''].join('~');
@@ -360,6 +363,14 @@ function unitList() {
     return list;
   }
   const owner = object.user && state.users[object.user] ? state.users[object.user].username : '';
+  if (object.type === 'constructionSite') {
+    addRow(list, 'NAME', 'construction site');
+    addRow(list, 'TYPE', structureLabel(object.structureType));
+    const total = object.progressTotal ?? 0;
+    const progress = object.progress ?? 0;
+    addRow(list, 'PROGRESS', total > 0 ? formatNumber(progress) + ' / ' + formatNumber(total) : formatNumber(progress));
+    return list;
+  }
   addRow(list, 'NAME', object.name || object.type || 'object');
   addRow(list, 'TYPE', object.type || '----');
   if (owner) addRow(list, 'OWNER', owner);
@@ -372,6 +383,42 @@ function unitList() {
   }
   if (object.spawning && object.spawning.name) addRow(list, 'TASK', 'Spawning ' + object.spawning.name);
   return list;
+}
+
+function objectsOnTile(x: number, y: number) {
+  const rank = (type?: string) => type === 'constructionSite' ? 0 : type === 'creep' ? 1 : 2;
+  return Object.values(state.objects)
+    .filter((object) => object.x === x && object.y === y)
+    .sort((a, b) => rank(a.type) - rank(b.type) || (a._id < b._id ? -1 : 1));
+}
+
+function selectionKey() {
+  const object = state.selectedId ? state.objects[state.selectedId] : undefined;
+  if (!object || object.type !== 'constructionSite') return '';
+  return [object.structureType || '', object.progress ?? 0, object.progressTotal ?? 0].join(':');
+}
+
+function structureLabel(type?: string) {
+  if (!type) return '----';
+  const names: Record<string, string> = {
+    constructedWall: 'wall',
+    extension: 'extension',
+    road: 'road',
+    spawn: 'spawn',
+    rampart: 'rampart',
+    container: 'container',
+    tower: 'tower',
+    storage: 'storage',
+    link: 'link',
+    extractor: 'extractor',
+    lab: 'lab',
+    terminal: 'terminal',
+    observer: 'observer',
+    nuker: 'nuker',
+    factory: 'factory',
+    powerSpawn: 'power spawn'
+  };
+  return names[type] || type.replace(/([A-Z])/g, ' $1').trim().toLowerCase();
 }
 
 function addRow(list: HTMLDListElement, name: string, value: string) {
