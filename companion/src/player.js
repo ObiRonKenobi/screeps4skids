@@ -1,6 +1,6 @@
 const { STARTER_MAIN, gclLevel, roomCandidates, spawnTiles } = require('./screeps');
 const { openGameSocket, handleFrame, pick } = require('./world');
-const { generateRoom } = require('./cli');
+const { generateRoom, clearRespawnCooldown } = require('./cli');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -147,6 +147,46 @@ class PlayerView {
     if (this.feed) this.feed.close();
   }
 
+  isDead() {
+    return colonyDead(this.objects, this.ready);
+  }
+
+  async restart() {
+    if (!this.isDead()) throw new Error('The colony is still alive.');
+    await this.api.request('POST', '/api/user/respawn', {}, true);
+    await clearRespawnCooldown(this.cliHost, this.userId);
+    if (this.feed) this.feed.close();
+    this.feed = null;
+    this.stopped = false;
+    this.authed = false;
+    this.objectsReady = false;
+    this.objects = {};
+    this.logs = [];
+    this.ready = false;
+    await this.writeStarter();
+    this.room = await exclusive(() => this.claimFreshRoom());
+    this.code = STARTER_MAIN;
+    this.terrain = await this.api.terrain(this.room);
+    const time = await this.api.time();
+    this.tick = Number(time.time);
+    this.ready = true;
+    this.logs.push({ tick: this.tick, text: 'This is ' + this.username + "'s colony." });
+    this.emit(this.snapshot());
+    this.watch();
+    return this.room;
+  }
+
+  async writeStarter() {
+    const code = await this.api.getCode();
+    const modules = {};
+    Object.entries(code.modules || {}).forEach(([name, value]) => {
+      modules[name] = moduleText(value);
+    });
+    modules.main = STARTER_MAIN;
+    await this.api.saveCode(modules);
+    this.code = STARTER_MAIN;
+  }
+
   async saveMain(source) {
     if (typeof source !== 'string') throw new Error('Could not save.');
     if (source.length > 500000) throw new Error('That script is too large.');
@@ -201,6 +241,18 @@ class PlayerView {
           console.error('place-spawn', name, tile.x, tile.y, error.message);
           if (/already playing/i.test(error.message)) return name;
           if (/room busy/i.test(error.message)) break;
+          if (/too soon/i.test(error.message)) {
+            await clearRespawnCooldown(this.cliHost, this.userId);
+            await sleep(500);
+            try {
+              await this.api.placeSpawn(name, tile.x, tile.y, 'Spawn1');
+              return name;
+            } catch (retryError) {
+              console.error('place-spawn', name, tile.x, tile.y, retryError.message);
+              if (/already playing/i.test(retryError.message)) return name;
+              if (/room busy/i.test(retryError.message)) break;
+            }
+          }
         }
       }
     }
@@ -235,6 +287,20 @@ class PlayerView {
     if (text.trim()) return;
     await this.api.saveCode({ main: STARTER_MAIN });
   }
+}
+
+function colonyDead(objects, ready) {
+  if (!ready) return false;
+  const list = Object.values(objects || {});
+  if (list.some((object) => object && object.type === 'creep')) return false;
+  if (list.some((object) => object && object.type === 'spawn' && object.spawning)) return false;
+  let energy = 0;
+  list.forEach((object) => {
+    if (!object || (object.type !== 'spawn' && object.type !== 'extension')) return;
+    const stored = object.store && object.store.energy;
+    if (typeof stored === 'number') energy += stored;
+  });
+  return energy < 200;
 }
 
 async function readMain(api) {

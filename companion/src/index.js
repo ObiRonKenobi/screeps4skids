@@ -170,6 +170,22 @@ async function handleLogin(socket, message, ip) {
   }
 }
 
+async function handleRestart(socket) {
+  const player = socket.player;
+  if (!player) {
+    send(socket, { type: 'restart', ok: false, error: 'Log in to start over.' });
+    return;
+  }
+  try {
+    const room = await player.restart();
+    if (player.username === world.ownerUsername) await world.retarget(room);
+    send(socket, { type: 'restart', ok: true });
+  } catch (error) {
+    console.error('restart:', error.message);
+    send(socket, { type: 'restart', ok: false, error: error.message === 'The colony is still alive.' ? error.message : 'Could not start over.' });
+  }
+}
+
 async function handleCode(socket, message) {
   if (!socket.player) {
     send(socket, { type: 'code', ok: false, error: 'Log in to edit your script.' });
@@ -222,6 +238,7 @@ sockets.on('connection', (socket, request) => {
       showOwnerColony(socket);
     }
     if (message.type === 'code') handleCode(socket, message);
+    if (message.type === 'restart') handleRestart(socket);
   });
   socket.on('close', () => {
     stopPlayer(socket);

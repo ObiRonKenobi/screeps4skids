@@ -38,4 +38,31 @@ function generateRoom(host, room) {
   ]);
 }
 
-module.exports = { generateRoom };
+function clearRespawnCooldown(host, userId) {
+  if (!/^[a-f0-9]{8,}$/i.test(userId)) throw new Error('bad user');
+  const command = "storage.db['users'].update({_id:'" + userId + "'},{$set:{lastRespawnDate:0}})";
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(21026, host);
+    let buf = '';
+    let sent = false;
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => finish(), 2500);
+    socket.on('error', (error) => finish(error));
+    socket.on('data', (chunk) => {
+      buf += chunk.toString('utf8');
+      if (sent || !buf.includes('< ')) return;
+      sent = true;
+      socket.write(command + '\r\n');
+    });
+  });
+}
+
+module.exports = { generateRoom, clearRespawnCooldown };

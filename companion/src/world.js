@@ -34,6 +34,11 @@ class World {
     this.ownerUserId = '';
     this.ready = false;
     this.listeners = new Set();
+    this.feed = null;
+    this.holdBoot = false;
+    this.authed = false;
+    this.objectsReady = false;
+    this.userId = '';
   }
 
   onEvent(listener) {
@@ -119,9 +124,11 @@ class World {
   async start() {
     for (;;) {
       try {
-        await this.boot();
+        if (this.holdBoot) this.holdBoot = false;
+        else await this.boot();
         await this.watch();
       } catch (error) {
+        this.holdBoot = false;
         this.ready = false;
         console.error('world relay:', error.message);
         this.emit({ type: 'waiting', error: 'server starting' });
@@ -172,7 +179,7 @@ class World {
     const status = await this.api.worldStatus();
     if (status.status === 'normal') {
       const start = await this.api.request('GET', '/api/user/world-start-room', null, true);
-      const room = this.roomOverride || (start.room && start.room[0]);
+      const room = (start.room && start.room[0]) || this.roomOverride;
       if (!room) throw new Error('owner has no room');
       this.room = room;
       await this.maybeSeedCode();
@@ -232,8 +239,28 @@ class World {
   watch() {
     this.authed = false;
     this.userId = this.ownerUserId;
-    const feed = openGameSocket(this.api.baseUrl, (socket, frame) => handleFrame(this, socket, frame));
-    return feed.done;
+    this.feed = openGameSocket(this.api.baseUrl, (socket, frame) => handleFrame(this, socket, frame));
+    return this.feed.done;
+  }
+
+  async retarget(room) {
+    if (!room) return;
+    const same = room === this.room && this.ready;
+    if (!same) {
+      this.room = room;
+      this.objects = {};
+      this.objectsReady = false;
+      this.authed = false;
+      this.logs = [];
+      this.terrain = await this.api.terrain(room);
+      const time = await this.api.time();
+      this.tick = Number(time.time);
+      this.ready = true;
+    }
+    this.emit(this.snapshot());
+    if (same) return;
+    this.holdBoot = true;
+    if (this.feed) this.feed.close();
   }
 
   }

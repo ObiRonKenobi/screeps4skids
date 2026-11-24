@@ -33,6 +33,7 @@ const state: {
   message: string;
   code: string;
   codeVersion: number;
+  restarting: boolean;
 } = {
   panel: 'colony',
   room: '----',
@@ -48,7 +49,8 @@ const state: {
   createStep: 'code',
   message: '',
   code: '',
-  codeVersion: 0
+  codeVersion: 0,
+  restarting: false
 };
 
 app.innerHTML = `
@@ -110,6 +112,7 @@ canvas.addEventListener('click', (event) => {
 
 let panelSignature = '';
 let navSignature = '';
+let announcedDead = false;
 
 function signedIn() {
   return state.viewer !== 'VISITOR';
@@ -139,12 +142,15 @@ function paintNav() {
 
 function paintChrome() {
   paintNav();
+  const dead = colonyDead();
+  if (dead && !announcedDead) state.panel = 'colony';
+  announcedDead = dead;
   tickEl.textContent = state.tick == null ? '----' : String(state.tick);
   userEl.textContent = state.viewer;
   roomName.textContent = 'ROOM ' + state.room;
   roomFoot.textContent = 'ROOM ' + state.room;
   const signature = state.panel === 'colony'
-    ? ['colony', state.selectedId, state.logs.map((line) => line.text).join('|'), state.status.energy, state.status.cpu, state.status.gcl, state.colonyUser, controllerKey()].join('~')
+    ? ['colony', state.selectedId, state.logs.map((line) => line.text).join('|'), energyKey(), state.status.cpu, state.status.gcl, state.colonyUser, controllerKey(), dead ? 'dead' : '', state.restarting ? 'restart' : '', state.message].join('~')
     : state.panel === 'code'
       ? ['code', state.codeVersion, state.message].join('~')
       : [state.panel, state.createStep, state.message, state.panel === 'guide' ? state.colonyUser : ''].join('~');
@@ -165,10 +171,41 @@ function renderPanel(): HTMLElement {
 
 function colonyPanel() {
   const root = document.createElement('div');
+  if (colonyDead()) root.append(gameOver());
   root.append(section('SYSTEM LOGS', logList()));
   root.append(section('COLONY STATUS', colonyStatus()));
   root.append(section('UNIT DETAILS', unitList()));
   return root;
+}
+
+function colonyDead() {
+  if (!signedIn() || !state.terrain) return false;
+  const objects = Object.values(state.objects);
+  if (objects.some((object) => object.type === 'creep')) return false;
+  if (objects.some((object) => object.type === 'spawn' && object.spawning)) return false;
+  return energyPool().energy < 200;
+}
+
+function gameOver() {
+  const wrap = document.createElement('section');
+  wrap.className = 'panel game-over';
+  wrap.append(heading('GAME OVER'));
+  const message = document.createElement('p');
+  message.textContent = 'Game Over! Your colony is dead.';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = state.restarting ? 'STARTING OVER...' : 'START OVER';
+  button.disabled = state.restarting;
+  button.addEventListener('click', () => {
+    if (state.restarting) return;
+    state.restarting = true;
+    state.message = 'Starting over...';
+    send({ type: 'restart' });
+    paintChrome();
+  });
+  wrap.append(message, button);
+  if (state.message) wrap.append(note(state.message));
+  return wrap;
 }
 
 function section(title: string, body: HTMLElement) {
@@ -202,14 +239,56 @@ function logList() {
 
 function colonyStatus() {
   const wrap = document.createElement('div');
-  wrap.append(statusList(), controllerMeter());
+  wrap.append(statusList(), energyMeter(), controllerMeter());
+  return wrap;
+}
+
+function energyPool() {
+  let energy = 0;
+  let capacity = 0;
+  Object.values(state.objects).forEach((object) => {
+    if (object.type !== 'spawn' && object.type !== 'extension') return;
+    const stored = object.store && object.store.energy;
+    energy += typeof stored === 'number' ? stored : (object.energy || 0);
+    const cap = object.storeCapacityResource && object.storeCapacityResource.energy;
+    capacity += typeof cap === 'number' ? cap : (object.energyCapacity || 0);
+  });
+  return { energy, capacity };
+}
+
+function energyKey() {
+  const pool = energyPool();
+  return pool.energy + ':' + pool.capacity;
+}
+
+function energyMeter() {
+  const pool = energyPool();
+  const wrap = document.createElement('div');
+  wrap.className = 'meter';
+  const label = document.createElement('div');
+  label.className = 'meter-label';
+  label.textContent = 'ENERGY POOL';
+  const track = document.createElement('div');
+  track.className = 'meter-track';
+  const fill = document.createElement('div');
+  fill.className = pool.capacity > 0 && pool.energy < 200 ? 'meter-fill meter-low' : 'meter-fill';
+  track.append(fill);
+  const readout = document.createElement('div');
+  readout.className = 'meter-readout';
+  if (pool.capacity <= 0) {
+    readout.textContent = '----';
+  } else {
+    const pct = Math.max(0, Math.min(100, (pool.energy / pool.capacity) * 100));
+    readout.textContent = formatNumber(pool.energy) + ' / ' + formatNumber(pool.capacity);
+    fill.style.width = pct.toFixed(2) + '%';
+  }
+  wrap.append(label, track, readout);
   return wrap;
 }
 
 function statusList() {
   const list = document.createElement('dl');
   addRow(list, 'COLONY', state.colonyUser || '----');
-  addRow(list, 'ENERGY', formatNumber(state.status.energy) + ' / ' + formatNumber(state.status.capacity));
   addRow(list, 'CPU', state.status.cpu == null ? '----' : state.status.cpu.toFixed(1) + 'ms');
   addRow(list, 'GCL', state.status.gcl == null ? '----' : String(state.status.gcl));
   return list;
@@ -596,9 +675,16 @@ function apply(message: {
     state.panel = 'colony';
     state.message = '';
     state.selectedId = null;
+    state.restarting = false;
+    announcedDead = false;
   }
   if (message.type === 'code') {
     state.message = message.ok ? 'Saved.' : (message.error || 'Could not save.');
+  }
+  if (message.type === 'restart') {
+    state.restarting = false;
+    state.message = message.ok ? '' : (message.error || 'Could not start over.');
+    if (message.ok) state.panel = 'colony';
   }
   if (message.type === 'register') {
     if (message.step === 'code' && message.ok) {
