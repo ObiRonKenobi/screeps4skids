@@ -197,7 +197,10 @@ const PALETTE: Record<string, string> = {
   y: YELLOW,
   b: BLUE,
   g: LEAF,
-  s: '#c5d0bc'
+  s: '#c5d0bc',
+  o: '#ff8a1e',
+  p: '#c06bff',
+  c: '#3ee0ff'
 };
 
 const SPRITES: Record<string, string[]> = {
@@ -271,6 +274,126 @@ const SPRITES: Record<string, string[]> = {
     'y......y',
     'yy....yy'
   ],
+  container: [
+    'oooooooo',
+    'okkkkkyo',
+    'okyyykyo',
+    'okyyykyo',
+    'okyyykyo',
+    'okyyykyo',
+    'okkkkkyo',
+    'oooooooo'
+  ],
+  tower: [
+    '...rr...',
+    '..krrk..',
+    '..kwwk..',
+    '.kkwwkk.',
+    '.kwwwkw.',
+    'kkwwwwkk',
+    'kwwwwwwk',
+    'kkkkkkkk'
+  ],
+  storage: [
+    'oooooooo',
+    'okkkkkko',
+    'oyyyyyyo',
+    'okkkkkko',
+    'owwwwwwo',
+    'owrrwwwo',
+    'owwwwwwo',
+    'oooooooo'
+  ],
+  link: [
+    '..cccc..',
+    '.cwwwc..',
+    'cwwwwcc.',
+    '.cwwc.c.',
+    'c.cwwc..',
+    '.ccwwwwc',
+    '..cwwwc.',
+    '..cccc..'
+  ],
+  lab: [
+    '..pppp..',
+    '..pwwp..',
+    '...pp...',
+    '..pwwp..',
+    '.pwwwp..',
+    'pwwwwwp.',
+    'pwwwwwp.',
+    '.pppppp.'
+  ],
+  terminal: [
+    '...yy...',
+    '...yy...',
+    '.bbbbbb.',
+    'bkkkkkkb',
+    'bkyyyykb',
+    'bkkkkkkb',
+    'bwwwwwwb',
+    'bbbbbbbb'
+  ],
+  extractor: [
+    '..ssss..',
+    '.skkks..',
+    '.skkks..',
+    'sskkksss',
+    '.skwwks.',
+    '.skwwks.',
+    'sskkkkss',
+    'ssssssss'
+  ],
+  observer: [
+    '.bbbbbb.',
+    'bwwwwwwb',
+    'bwwkkwwb',
+    'bwkyykwb',
+    'bwwkkwwb',
+    'bwwwwwwb',
+    '.bbbbbb.',
+    '........'
+  ],
+  nuker: [
+    '..rrrr..',
+    '.rrrrrr.',
+    '.rkwwkr.',
+    '.rkwwkr.',
+    '.rrrrrr.',
+    '.rkkkkr.',
+    'rrrrrrrr',
+    'kkkkkkkk'
+  ],
+  factory: [
+    'ss....ss',
+    'ss....ss',
+    'ssssssss',
+    'skwwwwks',
+    'skwywwks',
+    'skwwwwks',
+    'skwwwwks',
+    'kkkkkkkk'
+  ],
+  powerSpawn: [
+    '.kkkkkk.',
+    'kkkkkkkk',
+    'kwwwwwwk',
+    'kwyrrkwk',
+    'kwrryrwk',
+    'kwwwwwwk',
+    'kwwwwwwk',
+    'kkkkkkkk'
+  ],
+  rampart: [
+    'bbbbbbbb',
+    'b......b',
+    'b......b',
+    'b......b',
+    'b......b',
+    'b......b',
+    'b......b',
+    'bbbbbbbb'
+  ],
   wall: [
     'kkkkkkkk',
     'kssksskk',
@@ -284,8 +407,9 @@ const SPRITES: Record<string, string[]> = {
 };
 
 function rank(type?: string) {
-  if (type === 'creep') return 5;
-  if (type === 'spawn') return 4;
+  if (type === 'creep') return 6;
+  if (type === 'rampart') return 5;
+  if (type === 'spawn' || type === 'powerSpawn') return 4;
   if (type === 'source' || type === 'mineral') return 2;
   return 3;
 }
@@ -356,10 +480,29 @@ function band(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number,
   }
 }
 
+function glyphKey(object: GameObject) {
+  if (object.type === 'constructedWall') return 'wall';
+  if (object.type === 'constructionSite') {
+    if (object.structureType === 'constructedWall') return 'wall';
+    return object.structureType || 'site';
+  }
+  return object.type || 'site';
+}
+
+function outline(rows: string[]) {
+  return rows.map((row, y) => row.split('').map((pixel, x) => {
+    if (pixel === '.') return '.';
+    const edge = y === 0 || y === rows.length - 1 || x === 0 || x === row.length - 1
+      || rows[y - 1][x] === '.' || rows[y + 1][x] === '.'
+      || row[x - 1] === '.' || row[x + 1] === '.';
+    return edge ? pixel : '.';
+  }).join(''));
+}
+
 function drawGlyph(ctx: CanvasRenderingContext2D, object: GameObject, x: number, y: number, cell: number) {
-  const name = object.type === 'constructionSite' ? 'site' : object.type === 'constructedWall' || object.type === 'rampart' ? 'wall' : object.type || '';
-  const rows = SPRITES[name] || SPRITES.site;
-  blit(ctx, x, y, cell, rows);
+  const rows = SPRITES[glyphKey(object)] || SPRITES.site;
+  const picture = object.type === 'constructionSite' ? outline(rows) : rows;
+  blit(ctx, x, y, cell, picture);
 }
 
 function blit(ctx: CanvasRenderingContext2D, x: number, y: number, cell: number, rows: string[]) {

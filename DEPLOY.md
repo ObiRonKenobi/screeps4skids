@@ -20,7 +20,9 @@ The hostname is `screeps.rbyt3r.com`. TLS ends at Cloudflare. The tunnel is the 
    sudo mkdir -p /var/lib/screeps
    ```
 
-   In the stack's `.env`, set `SCREEPS_DATA_DIR=/var/lib/screeps`. If you are publishing an existing colony, copy its `db.json` into that directory before the first start.
+   In the stack's `.env`, set `SCREEPS_DATA_DIR=/var/lib/screeps`. If you are publishing an existing colony, stop the local server first, then copy the newest folder under `.local-data/backups/` into that directory. Copy both `db.json` and `world-seeded`. The backup loop writes a checked pair every 30 minutes and keeps one day of them. The marker has to travel with the database: without it, the first boot generates a room on top of this colony.
+
+   Restoring the local colony is the same copy in reverse. Stop the stack, replace `.local-data/db.json` with the snapshot's `db.json`, leave `world-seeded` in place, and start again.
 
 3. Put secrets in that `.env` only. Do not commit them.
 

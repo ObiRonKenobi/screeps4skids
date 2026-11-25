@@ -29,6 +29,7 @@ const state: {
   logs: LogLine[];
   status: Status;
   selectedId: string | null;
+  selectedTile: { x: number; y: number } | null;
   createStep: 'code' | 'password';
   message: string;
   code: string;
@@ -46,6 +47,7 @@ const state: {
   logs: [],
   status: { energy: 0, capacity: 0, cpu: null, gcl: null },
   selectedId: null,
+  selectedTile: null,
   createStep: 'code',
   message: '',
   code: '',
@@ -102,7 +104,9 @@ canvas.addEventListener('click', (event) => {
   const tile = view.tileAt(event.clientX, event.clientY);
   if (!tile) {
     state.selectedId = null;
+    state.selectedTile = null;
   } else {
+    state.selectedTile = { x: tile.x, y: tile.y };
     const onTile = objectsOnTile(tile.x, tile.y);
     if (!onTile.length) state.selectedId = null;
     else {
@@ -355,17 +359,30 @@ function controllerMeter() {
   return wrap;
 }
 
+function positionText(x?: number, y?: number) {
+  if (x == null || y == null) return '';
+  return x + ',' + y;
+}
+
 function unitList() {
   const list = document.createElement('dl');
   const object = state.selectedId ? state.objects[state.selectedId] : undefined;
-  if (!object) {
+  const position = object
+    ? positionText(object.x, object.y)
+    : positionText(state.selectedTile?.x, state.selectedTile?.y);
+  if (!object && !position) {
     addRow(list, 'SELECTED', 'none');
+    return list;
+  }
+  if (!object) {
+    addRow(list, 'POSITION', position);
     return list;
   }
   const owner = object.user && state.users[object.user] ? state.users[object.user].username : '';
   if (object.type === 'constructionSite') {
     addRow(list, 'NAME', 'construction site');
     addRow(list, 'TYPE', structureLabel(object.structureType));
+    if (position) addRow(list, 'POSITION', position);
     const total = object.progressTotal ?? 0;
     const progress = object.progress ?? 0;
     addRow(list, 'PROGRESS', total > 0 ? formatNumber(progress) + ' / ' + formatNumber(total) : formatNumber(progress));
@@ -373,6 +390,7 @@ function unitList() {
   }
   addRow(list, 'NAME', object.name || object.type || 'object');
   addRow(list, 'TYPE', object.type || '----');
+  if (position) addRow(list, 'POSITION', position);
   if (owner) addRow(list, 'OWNER', owner);
   if (object.hits != null) addRow(list, 'HEALTH', object.hits + '/' + (object.hitsMax ?? object.hits));
   addRow(list, 'CARGO', cargo(object));
@@ -394,8 +412,14 @@ function objectsOnTile(x: number, y: number) {
 
 function selectionKey() {
   const object = state.selectedId ? state.objects[state.selectedId] : undefined;
-  if (!object || object.type !== 'constructionSite') return '';
-  return [object.structureType || '', object.progress ?? 0, object.progressTotal ?? 0].join(':');
+  if (object) {
+    const position = positionText(object.x, object.y);
+    if (object.type === 'constructionSite') {
+      return [position, object.structureType || '', object.progress ?? 0, object.progressTotal ?? 0].join(':');
+    }
+    return position;
+  }
+  return positionText(state.selectedTile?.x, state.selectedTile?.y);
 }
 
 function structureLabel(type?: string) {
@@ -570,6 +594,24 @@ function guide() {
     ['attackController(controller)', 'CLAIM. Reduce a hostile controller.'],
     ['suicide()', 'Remove this creep immediately. Any creep.']
   ]));
+  root.append(guideList('BUILDINGS', [
+    ['spawn', 'Level 1. Births creeps and holds 300 energy.'],
+    ['extension', 'Level 2. Adds 50 energy to the spawn pool. Cost 3,000.'],
+    ['road', 'Any level. Halves walking fatigue. Cost 300 on open ground.'],
+    ['container', 'Any level. Holds 2,000. Creeps can walk on it. It decays. Cost 5,000.'],
+    ['wall', 'Level 2. Blocks movement. Costs 1 to place and a huge amount to fill.'],
+    ['rampart', 'Level 2. Your creeps walk through. Enemies do not.'],
+    ['tower', 'Level 3. Repairs, attacks, or heals anywhere in the room. Holds 1,000. Cost 5,000.'],
+    ['storage', 'Level 4. Holds 1,000,000. Does not decay. Cost 30,000.'],
+    ['link', 'Level 5. Sends energy to another link in the room. Cost 5,000.'],
+    ['extractor', 'Level 6. Built on the mineral so creeps can mine it. Cost 5,000.'],
+    ['lab', 'Level 6. Mixes minerals into boosts. Cost 50,000.'],
+    ['terminal', 'Level 6. Sends resources to other rooms. Cost 100,000.'],
+    ['factory', 'Level 7. Turns resources into commodities. Cost 100,000.'],
+    ['observer', 'Level 8. Looks into a distant room. Cost 8,000.'],
+    ['power spawn', 'Level 8. Processes power. Cost 100,000.'],
+    ['nuker', 'Level 8. Launches a nuke at another room. Cost 100,000.']
+  ]));
   return root;
 }
 
@@ -682,6 +724,7 @@ function apply(message: {
       state.codeVersion += 1;
     }
     state.selectedId = null;
+    state.selectedTile = null;
     view.fit();
   }
   if (message.type === 'patch') {
@@ -722,6 +765,7 @@ function apply(message: {
     state.panel = 'colony';
     state.message = '';
     state.selectedId = null;
+    state.selectedTile = null;
     state.restarting = false;
     announcedDead = false;
   }

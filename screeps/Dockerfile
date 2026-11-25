@@ -12,7 +12,7 @@ RUN npm install --unsafe-perm
 COPY patch-storage.js patch-runtime.js ./
 RUN node patch-storage.js && node patch-runtime.js
 
-COPY mods.json entrypoint.js seed-world.js ./
+COPY mods.json entrypoint.js seed-world.js backup-world.js ./
 
 ENV NODE_ENV=production
 EXPOSE 21025

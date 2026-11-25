@@ -58,6 +58,12 @@ spawn('node', ['seed-world.js'], {
   env: process.env
 });
 
+spawn('node', ['backup-world.js'], {
+  cwd: root,
+  stdio: 'inherit',
+  env: process.env
+});
+
 child.on('exit', (code) => process.exit(code == null ? 1 : code));
 process.on('SIGTERM', () => child.kill('SIGTERM'));
 process.on('SIGINT', () => child.kill('SIGINT'));
